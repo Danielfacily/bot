@@ -46,19 +46,42 @@ class BotControl(BaseModel):
 
 
 class RiskConfig(BaseModel):
-    max_risk_per_trade_pct: float = Field(ge=0.05, le=5)
-    max_daily_loss_pct: float = Field(ge=0.1, le=25)
-    max_daily_profit_pct: float = Field(ge=0.1, le=100)
-    max_open_positions: int = Field(ge=1, le=30)
-    leverage: int = Field(ge=1, le=125)
+    # Risco por trade e limites diários
+    max_risk_per_trade_pct: float = Field(default=1.0, ge=0.05, le=5)
+    max_daily_loss_pct: float = Field(default=5.0, ge=0.1, le=25)
+    max_daily_profit_pct: float = Field(default=10.0, ge=0.1, le=100)
+    max_trades_per_day: int = Field(default=20, ge=1, le=200)
+    max_open_positions: int = Field(default=5, ge=1, le=20)
+
+    # Alavancagem
+    leverage: int = Field(default=10, ge=1, le=20)
     auto_leverage_enabled: bool = True
-    max_auto_leverage: int = Field(default=10, ge=1, le=125)
+    max_auto_leverage: int = Field(default=10, ge=1, le=20)
     autonomous_risk_enabled: bool = True
-    fixed_margin_usdt: float = Field(default=10, ge=1, le=500)
-    min_stop_loss_pct: float = Field(default=1.0, ge=0.1, le=10)
+
+    # Margem por operação (USDT)
+    fixed_margin_usdt: float = Field(default=10.0, ge=1, le=500)
+    min_margin_usdt: float = Field(default=5.0, ge=1, le=500)
+    max_margin_usdt: float = Field(default=10.0, ge=1, le=500)
+
+    # Stop Loss e Take Profit (ATR)
+    min_stop_loss_pct: float = Field(default=0.5, ge=0.1, le=10)
+    atr_stop_multiplier: float = Field(default=1.5, ge=0.5, le=5.0)
+    atr_tp1_multiplier: float = Field(default=2.0, ge=1.0, le=10.0)
+    atr_tp2_multiplier: float = Field(default=3.5, ge=1.0, le=15.0)
+    tp1_close_pct: float = Field(default=0.5, ge=0.1, le=0.9)
+
+    # Filtros e tolerância
+    min_signal_score: float = Field(default=70.0, ge=50.0, le=100.0)
     risk_tolerance: str = "balanced"
-    trailing_stop_enabled: bool = False
+    multi_timeframe_enabled: bool = True
+    volatility_filter_enabled: bool = True
+    regime_filter_enabled: bool = True
+
+    # Gestão de saída
+    trailing_stop_enabled: bool = True
     break_even_enabled: bool = True
+    ai_exit_enabled: bool = True
 
 
 class HotCoin(BaseModel):

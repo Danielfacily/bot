@@ -24,15 +24,17 @@ const RISK_PRESETS = {
     label: "Conservador",
     values: {
       max_risk_per_trade_pct: 0.5,
-      fixed_margin_usdt: 8,
-      min_stop_loss_pct: 1.2,
-      leverage: 2,
-      max_auto_leverage: 6,
-      max_open_positions: 5,
+      fixed_margin_usdt: 5,
+      min_stop_loss_pct: 0.5,
+      leverage: 5,
+      max_auto_leverage: 8,
+      max_open_positions: 3,
+      max_trades_per_day: 10,
+      min_signal_score: 75,
       risk_tolerance: "conservative",
       autonomous_risk_enabled: true,
       auto_leverage_enabled: true,
-      trailing_stop_enabled: false,
+      trailing_stop_enabled: true,
       break_even_enabled: true
     }
   },
@@ -40,15 +42,17 @@ const RISK_PRESETS = {
     label: "Balanceado",
     values: {
       max_risk_per_trade_pct: 1,
-      fixed_margin_usdt: 12,
-      min_stop_loss_pct: 0.8,
-      leverage: 3,
+      fixed_margin_usdt: 10,
+      min_stop_loss_pct: 0.5,
+      leverage: 10,
       max_auto_leverage: 10,
-      max_open_positions: 8,
+      max_open_positions: 5,
+      max_trades_per_day: 20,
+      min_signal_score: 70,
       risk_tolerance: "balanced",
       autonomous_risk_enabled: true,
       auto_leverage_enabled: true,
-      trailing_stop_enabled: false,
+      trailing_stop_enabled: true,
       break_even_enabled: true
     }
   },
@@ -56,11 +60,13 @@ const RISK_PRESETS = {
     label: "Arrojado",
     values: {
       max_risk_per_trade_pct: 1.5,
-      fixed_margin_usdt: 20,
-      min_stop_loss_pct: 0.6,
-      leverage: 5,
-      max_auto_leverage: 15,
-      max_open_positions: 10,
+      fixed_margin_usdt: 10,
+      min_stop_loss_pct: 0.5,
+      leverage: 15,
+      max_auto_leverage: 20,
+      max_open_positions: 5,
+      max_trades_per_day: 30,
+      min_signal_score: 65,
       risk_tolerance: "aggressive",
       autonomous_risk_enabled: true,
       auto_leverage_enabled: true,
@@ -407,8 +413,8 @@ function RiskPanel({ draft, saved, dirty, loading, onChange, onPreset, onDiscard
           <FieldNumber label="Risco por trade" suffix="%" min="0.05" max="5" step="0.05" value={draft.max_risk_per_trade_pct} onChange={(value) => onChange("max_risk_per_trade_pct", value)} />
           <FieldNumber label="Margem entrada" suffix="USDT" min="1" max="500" step="1" value={draft.fixed_margin_usdt} onChange={(value) => onChange("fixed_margin_usdt", value)} />
           <FieldNumber label="Stop mínimo" suffix="%" min="0.1" max="10" step="0.1" value={draft.min_stop_loss_pct} onChange={(value) => onChange("min_stop_loss_pct", value)} />
-          <FieldNumber label="Alav. fixa" suffix="x" min="1" max="125" step="1" value={draft.leverage} onChange={(value) => onChange("leverage", value)} />
-          <FieldNumber label="Teto auto" suffix="x" min="1" max="125" step="1" value={draft.max_auto_leverage} onChange={(value) => onChange("max_auto_leverage", value)} />
+          <FieldNumber label="Alav. fixa" suffix="x" min="1" max="20" step="1" value={draft.leverage} onChange={(value) => onChange("leverage", value)} />
+          <FieldNumber label="Teto auto" suffix="x" min="1" max="20" step="1" value={draft.max_auto_leverage} onChange={(value) => onChange("max_auto_leverage", value)} />
           <FieldNumber label="Máx. posições" min="1" max="30" step="1" value={draft.max_open_positions} onChange={(value) => onChange("max_open_positions", value)} />
           <label className="select-field">
             <span>Tolerância</span>
