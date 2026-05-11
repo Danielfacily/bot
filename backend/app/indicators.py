@@ -76,57 +76,61 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def swing_highs_lows(df: pd.DataFrame, lookback: int = 5) -> tuple[pd.Series, pd.Series]:
     """Identifica swing highs/lows com janela simétrica. Retorna (sh_bool, sl_bool)."""
-    high = df["high"]
-    low = df["low"]
-    n = len(df)
-    sh = pd.Series(False, index=df.index)
-    sl = pd.Series(False, index=df.index)
+    high = df["high"].values
+    low = df["low"].values
+    n = len(high)
+    sh = np.zeros(n, dtype=bool)
+    sl = np.zeros(n, dtype=bool)
     if n < (2 * lookback + 1):
-        return sh, sl
+        return pd.Series(sh, index=df.index), pd.Series(sl, index=df.index)
     for i in range(lookback, n - lookback):
-        window_h = high.iloc[i - lookback : i + lookback + 1]
-        window_l = low.iloc[i - lookback : i + lookback + 1]
-        if high.iloc[i] == window_h.max() and (window_h == high.iloc[i]).sum() == 1:
-            sh.iloc[i] = True
-        if low.iloc[i] == window_l.min() and (window_l == low.iloc[i]).sum() == 1:
-            sl.iloc[i] = True
-    return sh, sl
+        wh = high[i - lookback: i + lookback + 1]
+        wl = low[i - lookback: i + lookback + 1]
+        if high[i] == wh.max() and (wh == high[i]).sum() == 1:
+            sh[i] = True
+        if low[i] == wl.min() and (wl == low[i]).sum() == 1:
+            sl[i] = True
+    return pd.Series(sh, index=df.index), pd.Series(sl, index=df.index)
 
 
 def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> tuple[pd.Series, pd.Series]:
     """Supertrend. Retorna (linha, direção). direction=1 alta, -1 baixa."""
-    hl2 = (df["high"] + df["low"]) / 2
-    atr_val = atr(df, period)
-    upper_band = (hl2 + multiplier * atr_val).copy()
-    lower_band = (hl2 - multiplier * atr_val).copy()
-    supertrend_line = pd.Series(index=df.index, dtype=float)
-    direction = pd.Series(index=df.index, dtype=float)
-    if len(df) == 0:
-        return supertrend_line, direction
-    supertrend_line.iloc[0] = float(upper_band.iloc[0]) if not pd.isna(upper_band.iloc[0]) else float(df["close"].iloc[0])
-    direction.iloc[0] = -1
-    for i in range(1, len(df)):
-        ub_prev = upper_band.iloc[i - 1]
-        lb_prev = lower_band.iloc[i - 1]
-        ub_cur = upper_band.iloc[i]
-        lb_cur = lower_band.iloc[i]
-        prev_close = df["close"].iloc[i - 1]
-        curr_close = df["close"].iloc[i]
-        if not pd.isna(ub_prev) and not pd.isna(ub_cur):
-            upper_band.iloc[i] = ub_cur if (ub_cur < ub_prev or prev_close > ub_prev) else ub_prev
-        if not pd.isna(lb_prev) and not pd.isna(lb_cur):
-            lower_band.iloc[i] = lb_cur if (lb_cur > lb_prev or prev_close < lb_prev) else lb_prev
-        prev_st = supertrend_line.iloc[i - 1]
-        if pd.isna(prev_st) or pd.isna(upper_band.iloc[i]) or pd.isna(lower_band.iloc[i]):
-            supertrend_line.iloc[i] = upper_band.iloc[i] if not pd.isna(upper_band.iloc[i]) else curr_close
-            direction.iloc[i] = -1
+    hl2 = ((df["high"] + df["low"]) / 2).values
+    atr_vals = atr(df, period).values
+    close = df["close"].values
+    n = len(close)
+
+    upper = hl2 + multiplier * atr_vals
+    lower = hl2 - multiplier * atr_vals
+    st = np.full(n, np.nan)
+    direction = np.full(n, -1, dtype=int)
+
+    if n == 0:
+        return pd.Series(st, index=df.index), pd.Series(direction, index=df.index)
+
+    st[0] = upper[0] if not np.isnan(upper[0]) else close[0]
+
+    for i in range(1, n):
+        if np.isnan(atr_vals[i]):
+            st[i] = upper[i] if not np.isnan(upper[i]) else close[i]
+            direction[i] = -1
             continue
-        if prev_st == ub_prev:
-            supertrend_line.iloc[i] = upper_band.iloc[i] if curr_close <= upper_band.iloc[i] else lower_band.iloc[i]
+        # Adjust bands (Wilder's method)
+        if not np.isnan(upper[i - 1]):
+            upper[i] = upper[i] if (upper[i] < upper[i - 1] or close[i - 1] > upper[i - 1]) else upper[i - 1]
+        if not np.isnan(lower[i - 1]):
+            lower[i] = lower[i] if (lower[i] > lower[i - 1] or close[i - 1] < lower[i - 1]) else lower[i - 1]
+        prev_st = st[i - 1]
+        if np.isnan(prev_st):
+            st[i] = upper[i]
+            direction[i] = -1
+        elif prev_st == upper[i - 1]:
+            st[i] = upper[i] if close[i] <= upper[i] else lower[i]
         else:
-            supertrend_line.iloc[i] = lower_band.iloc[i] if curr_close >= lower_band.iloc[i] else upper_band.iloc[i]
-        direction.iloc[i] = 1 if curr_close > supertrend_line.iloc[i] else -1
-    return supertrend_line, direction.astype(int)
+            st[i] = lower[i] if close[i] >= lower[i] else upper[i]
+        direction[i] = 1 if close[i] > st[i] else -1
+
+    return pd.Series(st, index=df.index), pd.Series(direction, index=df.index)
 
 
 def z_score(series: pd.Series, period: int = 20) -> pd.Series:
