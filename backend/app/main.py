@@ -275,6 +275,21 @@ async def strategy_loop() -> None:
                             db.commit()
                             continue
 
+                    # Extrai ATR e níveis estruturais do 1h para SL/TP preciso
+                    atr_1h = float(signal.features.get("atr_1h") or 0) or None
+                    if signal.direction == "LONG":
+                        structural_stop = signal.features.get("structural_stop_long")
+                        structural_target = (
+                            signal.features.get("structural_target2_long")
+                            or signal.features.get("structural_target_long")
+                        )
+                    else:
+                        structural_stop = signal.features.get("structural_stop_short")
+                        structural_target = (
+                            signal.features.get("structural_target2_short")
+                            or signal.features.get("structural_target_short")
+                        )
+
                     decision = risk_manager.evaluate(
                         db,
                         signal.symbol,
@@ -285,6 +300,9 @@ async def strategy_loop() -> None:
                         leverage,
                         signal.score,
                         float(signal.features.get("target_move_pct") or 0),
+                        atr_1h=atr_1h,
+                        structural_stop=float(structural_stop) if structural_stop is not None else None,
+                        structural_target=float(structural_target) if structural_target is not None else None,
                     )
 
                     if not decision.allowed:
@@ -332,6 +350,9 @@ async def strategy_loop() -> None:
                             "stop_loss": trade.stop_loss,
                             "take_profit_1": decision.take_profit_1,
                             "take_profit_2": trade.take_profit,
+                            "sl_structural": signal.features.get("structural_stop_long" if signal.direction == "LONG" else "structural_stop_short"),
+                            "resistance_levels": signal.features.get("resistance_levels", []),
+                            "support_levels": signal.features.get("support_levels", []),
                         },
                     )
 

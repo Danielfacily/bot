@@ -111,6 +111,18 @@ def detect_market_regime(adx_series: pd.Series, threshold: float = 25.0) -> pd.S
     )
 
 
+def swing_highs_lows(df: pd.DataFrame, lookback: int = 5) -> tuple[pd.Series, pd.Series]:
+    """
+    Detecta swing highs e swing lows locais usando janela simétrica.
+    swing_high[i] = True se high[i] é a máxima dos lookback candles adjacentes.
+    Os últimos lookback candles ficam como False (janela incompleta).
+    """
+    window = lookback * 2 + 1
+    swing_high = (df["high"] == df["high"].rolling(window, center=True, min_periods=lookback + 1).max()).fillna(False)
+    swing_low = (df["low"] == df["low"].rolling(window, center=True, min_periods=lookback + 1).min()).fillna(False)
+    return swing_high, swing_low
+
+
 def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula e adiciona todos os indicadores técnicos ao DataFrame de candles.

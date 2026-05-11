@@ -44,6 +44,14 @@ class StrategyEngine:
         features["regime"] = regime
         features["trend_1h"] = self._trend_1h(latest_1h)
 
+        # Níveis estruturais do 1h para SL/TP preciso em trades de 1h
+        if latest_1h is not None:
+            try:
+                struct = self._structural_levels(enriched_1h)
+                features.update(struct)
+            except Exception:
+                pass
+
         long_score, long_reasons = self._score_long(latest, previous, latest_1h)
         short_score, short_reasons = self._score_short(latest, previous, latest_1h)
 
@@ -110,6 +118,66 @@ class StrategyEngine:
         if ema9 < ema21 < ema50:
             return "bearish"
         return "neutral"
+
+    def _structural_levels(self, df_1h: pd.DataFrame) -> dict:
+        """
+        Calcula níveis estruturais de SL e TP a partir dos swing highs/lows do 1h.
+        Retorna: atr_1h, structural_stop_long/short, structural_target_long/short,
+                 support_levels, resistance_levels
+        """
+        from app.indicators import atr as calc_atr, swing_highs_lows
+
+        if len(df_1h) < 20:
+            return {}
+
+        enriched = df_1h.copy()
+        if "atr" not in enriched.columns:
+            enriched["atr"] = calc_atr(enriched)
+
+        valid = enriched.dropna(subset=["atr"])
+        if valid.empty:
+            return {}
+
+        atr_1h = float(valid["atr"].iloc[-1])
+        current_price = float(valid["close"].iloc[-1])
+
+        # Exclui os últimos 3 candles (swing_highs_lows com lookback=3 precisa de 3 candles futuros)
+        lookback = 3
+        confirmed = valid.iloc[:-lookback] if len(valid) > lookback else valid
+        swing_high, swing_low = swing_highs_lows(confirmed, lookback=lookback)
+
+        sh_prices = confirmed["high"][swing_high].tail(10).values.tolist()
+        sl_prices = confirmed["low"][swing_low].tail(10).values.tolist()
+
+        # Suportes abaixo do preço, mais próximo primeiro
+        supports = sorted([p for p in sl_prices if p < current_price], reverse=True)
+        # Resistências acima do preço, mais próxima primeiro
+        resistances = sorted([p for p in sh_prices if p > current_price])
+
+        buffer = atr_1h * 0.25  # buffer de 25% do ATR 1h para evitar ativação por ruído
+
+        result: dict = {"atr_1h": round(atr_1h, 6)}
+
+        if supports:
+            result["structural_stop_long"] = round(supports[0] - buffer, 6)
+
+        if resistances:
+            result["structural_stop_short"] = round(resistances[0] + buffer, 6)
+
+        if resistances:
+            result["structural_target_long"] = round(resistances[0], 6)
+            if len(resistances) > 1:
+                result["structural_target2_long"] = round(resistances[1], 6)
+
+        if supports:
+            result["structural_target_short"] = round(supports[0], 6)
+            if len(supports) > 1:
+                result["structural_target2_short"] = round(supports[1], 6)
+
+        result["support_levels"] = [round(p, 6) for p in supports[:3]]
+        result["resistance_levels"] = [round(p, 6) for p in resistances[:3]]
+
+        return result
 
     # ── PONTUAÇÃO LONG ───────────────────────────────────────────────────────────
 

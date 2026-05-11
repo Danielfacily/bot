@@ -45,6 +45,9 @@ class RiskManager:
         score: float,
         target_move_pct: float | None = None,
         manual_override: bool = False,
+        atr_1h: float | None = None,
+        structural_stop: float | None = None,
+        structural_target: float | None = None,
     ) -> RiskDecision:
         config = get_risk_config(db)
 
@@ -89,10 +92,32 @@ class RiskManager:
         if volatility_rel > 6.0 and not manual_override:
             return RiskDecision(False, f"Volatilidade ATR relativa {volatility_rel:.1f}% acima do limite seguro (6%).")
 
+        # ── ESCOLHA DE ATR: usar 1h quando disponível (trades de 1h) ─────────────
+        effective_atr = atr_1h if (atr_1h and atr_1h > atr_value) else atr_value
+
         # ── CÁLCULO DAS DISTÂNCIAS DE SL/TP ─────────────────────────────────────
-        stop_dist = self.stop_distance(config, entry_price, atr_value)
-        tp1_dist = atr_value * float(config.get("atr_tp1_multiplier", self.settings.atr_tp1_multiplier))
-        tp2_dist = atr_value * float(config.get("atr_tp2_multiplier", self.settings.atr_tp2_multiplier))
+        atr_stop_dist = self.stop_distance(config, entry_price, effective_atr)
+        tp1_dist = effective_atr * float(config.get("atr_tp1_multiplier", self.settings.atr_tp1_multiplier))
+        tp2_dist = effective_atr * float(config.get("atr_tp2_multiplier", self.settings.atr_tp2_multiplier))
+
+        # ── SL ESTRUTURAL: usar swing structure quando disponível e razoável ──────
+        stop_dist = atr_stop_dist
+        using_structural_sl = False
+        if structural_stop is not None:
+            dist_to_structural = abs(entry_price - structural_stop)
+            # Usar SL estrutural se estiver entre 0.7x e 5x o ATR efetivo
+            if effective_atr * 0.7 <= dist_to_structural <= effective_atr * 5.0:
+                stop_dist = dist_to_structural
+                using_structural_sl = True
+
+        # ── TP ESTRUTURAL: usar nível de resistência/suporte quando disponível ───
+        if structural_target is not None:
+            tp_struct_dist = abs(structural_target - entry_price)
+            # Usar TP estrutural se der pelo menos R:R 1.5:1 e não for maior que 8x stop
+            if tp_struct_dist >= stop_dist * 1.5 and tp_struct_dist <= stop_dist * 8.0:
+                tp2_dist = tp_struct_dist
+                # TP1 fica no meio do caminho entre entrada e TP estrutural
+                tp1_dist = tp2_dist * 0.5
 
         # TP2 mínimo: 1.5x o stop (risco:retorno mínimo)
         tp2_dist = max(tp2_dist, stop_dist * 1.5)
@@ -150,7 +175,9 @@ class RiskManager:
                     leverage=effective_leverage,
                 )
 
-        reason = "Risco aprovado manualmente." if manual_override else "Risco aprovado."
+        sl_method = "estrutural" if using_structural_sl else "ATR"
+        atr_source = "1h" if (atr_1h and atr_1h > atr_value) else "15m"
+        reason = f"Aprovado (SL {sl_method} | ATR {atr_source})." if not manual_override else "Risco aprovado manualmente."
         return RiskDecision(
             allowed=True,
             reason=reason,
