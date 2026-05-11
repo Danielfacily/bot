@@ -123,6 +123,124 @@ def swing_highs_lows(df: pd.DataFrame, lookback: int = 5) -> tuple[pd.Series, pd
     return swing_high, swing_low
 
 
+def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> tuple[pd.Series, pd.Series]:
+    """
+    Supertrend indicator. Returns (supertrend_line, direction).
+    direction: 1 = bullish, -1 = bearish.
+    """
+    if len(df) == 0:
+        return pd.Series(dtype=float), pd.Series(dtype=int)
+
+    hl2 = (df["high"] + df["low"]) / 2
+    atr_val = atr(df, period)
+    upper_band = (hl2 + multiplier * atr_val).copy()
+    lower_band = (hl2 - multiplier * atr_val).copy()
+
+    supertrend_line = pd.Series(index=df.index, dtype=float)
+    direction = pd.Series(index=df.index, dtype="float")
+    direction.iloc[0] = -1.0
+    supertrend_line.iloc[0] = upper_band.iloc[0]
+
+    for i in range(1, len(df)):
+        curr_close = float(df["close"].iloc[i])
+        prev_close = float(df["close"].iloc[i - 1])
+        prev_upper = upper_band.iloc[i - 1]
+        prev_lower = lower_band.iloc[i - 1]
+        ub = upper_band.iloc[i]
+        lb = lower_band.iloc[i]
+        if pd.notna(prev_upper) and pd.notna(ub):
+            if ub < prev_upper or prev_close > prev_upper:
+                upper_band.iloc[i] = ub
+            else:
+                upper_band.iloc[i] = prev_upper
+        if pd.notna(prev_lower) and pd.notna(lb):
+            if lb > prev_lower or prev_close < prev_lower:
+                lower_band.iloc[i] = lb
+            else:
+                lower_band.iloc[i] = prev_lower
+
+        prev_st = supertrend_line.iloc[i - 1]
+        if pd.isna(prev_st):
+            prev_st = upper_band.iloc[i]
+        if prev_st == upper_band.iloc[i - 1]:
+            if curr_close <= upper_band.iloc[i]:
+                supertrend_line.iloc[i] = upper_band.iloc[i]
+            else:
+                supertrend_line.iloc[i] = lower_band.iloc[i]
+        else:
+            if curr_close >= lower_band.iloc[i]:
+                supertrend_line.iloc[i] = lower_band.iloc[i]
+            else:
+                supertrend_line.iloc[i] = upper_band.iloc[i]
+
+        direction.iloc[i] = 1.0 if curr_close > supertrend_line.iloc[i] else -1.0
+
+    return supertrend_line, direction.astype("Int64")
+
+
+def z_score(series: pd.Series, period: int = 20) -> pd.Series:
+    """Z-Score: (price - mean) / std. > 2 ou < -2 = desvio extremo."""
+    rolling_mean = series.rolling(period).mean()
+    rolling_std = series.rolling(period).std()
+    return (series - rolling_mean) / rolling_std.replace(0, np.nan)
+
+
+def market_structure(df: pd.DataFrame, lookback: int = 5) -> pd.DataFrame:
+    """
+    Estrutura HH/HL/LH/LL. Retorna: swing_high, swing_low, hh, hl, lh, ll, structure.
+    """
+    high = df["high"]
+    low = df["low"]
+
+    sh, sl = swing_highs_lows(df, lookback=lookback)
+
+    sh_values = high.where(sh).ffill()
+    sl_values = low.where(sl).ffill()
+
+    hh = sh & (high > sh_values.shift(1))
+    hl = sl & (low > sl_values.shift(1))
+    lh = sh & (high < sh_values.shift(1))
+    ll = sl & (low < sl_values.shift(1))
+
+    structure = pd.Series("neutral", index=df.index)
+    structure[hh | hl] = "bullish"
+    structure[lh | ll] = "bearish"
+    # Forward-fill estrutura para manter regime entre swings
+    structure = structure.replace("neutral", np.nan).ffill().fillna("neutral")
+
+    out = pd.DataFrame(index=df.index)
+    out["swing_high"] = sh
+    out["swing_low"] = sl
+    out["hh"] = hh.fillna(False)
+    out["hl"] = hl.fillna(False)
+    out["lh"] = lh.fillna(False)
+    out["ll"] = ll.fillna(False)
+    out["structure"] = structure
+    return out
+
+
+def volume_spike(volume: pd.Series, period: int = 20, threshold: float = 2.0) -> pd.Series:
+    """Spike: volume atual > threshold * média dos últimos period candles."""
+    vol_ma = volume.rolling(period).mean()
+    return volume > (vol_ma * threshold)
+
+
+def liquidity_zones(df: pd.DataFrame, lookback: int = 50) -> dict:
+    """
+    Zonas de liquidez: acima de swing highs e abaixo de swing lows.
+    Retorna as 3 zonas mais relevantes acima/abaixo do preço atual.
+    """
+    sh, sl = swing_highs_lows(df.tail(lookback), lookback=3)
+    current_price = float(df["close"].iloc[-1])
+    sh_prices = df["high"][sh].tail(lookback).values.tolist()
+    sl_prices = df["low"][sl].tail(lookback).values.tolist()
+
+    above = sorted([p for p in sh_prices if p > current_price])[:3]
+    below = sorted([p for p in sl_prices if p < current_price], reverse=True)[:3]
+
+    return {"liquidity_above": above, "liquidity_below": below}
+
+
 def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calcula e adiciona todos os indicadores técnicos ao DataFrame de candles.
@@ -185,5 +303,31 @@ def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     upper_wick = out["high"] - out[["open", "close"]].max(axis=1)
     lower_wick = out[["open", "close"]].min(axis=1) - out["low"]
     out["rejection_candle"] = ((upper_wick / candle_range) > 0.45) | ((lower_wick / candle_range) > 0.45)
+
+    # Supertrend, Z-Score
+    try:
+        st_line, st_dir = supertrend(out)
+        out["supertrend"] = st_line
+        out["supertrend_dir"] = st_dir
+    except Exception:
+        out["supertrend"] = np.nan
+        out["supertrend_dir"] = 0
+
+    out["z_score"] = z_score(out["close"])
+
+    # Estrutura de mercado
+    try:
+        struct = market_structure(out)
+        out["hh"] = struct["hh"]
+        out["hl"] = struct["hl"]
+        out["lh"] = struct["lh"]
+        out["ll"] = struct["ll"]
+        out["market_structure"] = struct["structure"]
+        out["swing_high"] = struct["swing_high"]
+        out["swing_low"] = struct["swing_low"]
+    except Exception:
+        out["market_structure"] = "neutral"
+
+    out["volume_spike"] = volume_spike(out["volume"])
 
     return out
