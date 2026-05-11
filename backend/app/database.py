@@ -28,10 +28,26 @@ def init_db() -> None:
         DailyPerformance,
         LogEntry,
         Metric,
+        ModelFeatures,
+        ModelPrediction,
         Order,
         Position,
+        RiskEvent,
         Signal,
         Trade,
     )
 
     Base.metadata.create_all(bind=engine)
+
+    # Adiciona colunas novas em tabelas existentes (idempotente)
+    with engine.connect() as conn:
+        migrations = [
+            "ALTER TABLE signals ADD COLUMN IF NOT EXISTS setup VARCHAR(50) DEFAULT 'none'",
+            "ALTER TABLE trades ADD COLUMN IF NOT EXISTS take_profit_1 FLOAT",
+        ]
+        for sql in migrations:
+            try:
+                conn.execute(__import__("sqlalchemy").text(sql))
+            except Exception:
+                pass
+        conn.commit()
