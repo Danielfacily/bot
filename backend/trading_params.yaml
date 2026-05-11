@@ -1,0 +1,200 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# PARÂMETROS DE TRADING — PERFIL SCALPING/SWING EM FUTUROS ALAVANCADOS
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Este arquivo documenta TODOS os parâmetros configuráveis do bot.
+# Os valores padrão refletem o perfil de risco padrão (10x-20x, 5-10 USDT/trade).
+#
+# COMO CONFIGURAR:
+#   1. Variáveis de infraestrutura (API keys, URLs): edite o arquivo .env
+#   2. Parâmetros de trading em tempo real: use a API POST /api/config/risk
+#   3. Este arquivo serve como referência documentada dos padrões e limites
+#
+# ⚠ ATENÇÃO: sempre validar em modo paper antes de operar com dinheiro real.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── PERFIL OPERACIONAL ─────────────────────────────────────────────────────────
+trading:
+  # Tipo de operação: scalping/swing curto em futuros perpétuos USDT-M
+  style: "scalping_swing"
+
+  # Timeframe primário para análise de entrada
+  # Valores suportados: 1m, 3m, 5m, 15m, 30m, 1h, 4h
+  primary_timeframe: "15m"
+
+  # Timeframe de confirmação (sinal só é válido se alinhado com este TF)
+  confirmation_timeframe: "1h"
+
+  # Ativos preferidos (pares de alta liquidez e volatilidade)
+  preferred_symbols:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - BNBUSDT
+    - XRPUSDT
+    - DOGEUSDT
+    - LINKUSDT
+    - ADAUSDT
+
+
+# ── ALAVANCAGEM ────────────────────────────────────────────────────────────────
+leverage:
+  # Alavancagem padrão fixa (usada quando auto_leverage_enabled=false)
+  default: 10          # Range recomendado: 10-20
+
+  # Limite absoluto de alavancagem — nunca será ultrapassado
+  maximum: 20
+
+  # Ajustar alavancagem automaticamente por score e volatilidade
+  auto_leverage_enabled: true
+
+  # Limite da alavancagem automática
+  max_auto_leverage: 10
+
+  # Usar modo de margem autônoma (margem fixa em USDT por trade)
+  autonomous_risk_enabled: true
+
+  # Tolerância ao risco: conservative | balanced | aggressive
+  # - conservative: usa 35-70% do ceiling por score/volatilidade
+  # - balanced    : usa 45-85% do ceiling
+  # - aggressive  : usa 55-100% do ceiling
+  risk_tolerance: "balanced"
+
+
+# ── MARGEM POR OPERAÇÃO ────────────────────────────────────────────────────────
+margin:
+  # Margem alocada por trade (USDT)
+  # O tamanho da posição = margem × alavancagem / preço_entrada
+  fixed_usdt: 10.0     # valor padrão
+  minimum_usdt: 5.0    # nunca abaixo deste valor
+  maximum_usdt: 10.0   # nunca acima deste valor
+
+
+# ── GESTÃO DE RISCO — STOP LOSS E TAKE PROFIT ──────────────────────────────────
+risk:
+  # Stop Loss dinâmico baseado em ATR
+  # SL = preço_entrada ± (ATR × atr_stop_multiplier)
+  atr_stop_multiplier: 1.5    # 1.5x ATR (padrão)
+  min_stop_loss_pct: 0.5      # SL mínimo: 0.5% do preço de entrada
+
+  # Take Profit escalonado
+  # TP1: fechar 50% da posição aqui → mover SL para breakeven
+  atr_tp1_multiplier: 2.0     # TP1 = 2.0x ATR
+  tp1_close_pct: 0.5          # fechar 50% no TP1
+
+  # TP2: fechar o restante aqui (trailing stop ativo após TP1)
+  atr_tp2_multiplier: 3.5     # TP2 = 3.5x ATR
+
+  # Risco máximo por operação (% do saldo total)
+  # Usado quando autonomous_risk_enabled=false
+  max_risk_per_trade_pct: 1.0  # 1-2% recomendado
+
+
+# ── LIMITES DIÁRIOS ────────────────────────────────────────────────────────────
+daily_limits:
+  # Drawdown máximo diário: se a perda acumulada atingir este % do saldo
+  # do início do dia, o bot para de abrir novas posições até meia-noite UTC
+  max_loss_pct: 5.0
+
+  # Lucro máximo diário: o bot para ao atingir este % de ganho no dia
+  max_profit_pct: 10.0
+
+  # Número máximo de trades por dia (abertos pelo bot)
+  max_trades: 20
+
+  # Número máximo de posições simultâneas abertas
+  max_open_positions: 5
+
+
+# ── FILTROS DE ENTRADA ─────────────────────────────────────────────────────────
+entry_filters:
+  # Score mínimo de confiança do sinal (0-100)
+  # Um sinal só abre posição se score >= min_signal_score
+  # Score é composto por confluência de múltiplos indicadores
+  min_signal_score: 70.0
+
+  # Confirmar sinal no timeframe de confirmação (1h) antes de entrar
+  multi_timeframe_enabled: true
+
+  # Filtrar mercados planos: não operar se ATR relativo < 0.2%
+  volatility_filter_enabled: true
+
+  # Filtrar regime lateral: só operar quando ADX >= 25 (tendência)
+  regime_filter_enabled: true
+
+
+# ── INDICADORES TÉCNICOS ────────────────────────────────────────────────────────
+indicators:
+  # Stack de indicadores implementados:
+  #
+  # TENDÊNCIA (2 indicadores):
+  #   EMA 9/21/50/200  — cruzamento e alinhamento de médias
+  #   ADX 14           — força da tendência (trending vs. ranging)
+  #
+  # MOMENTUM (1 indicador):
+  #   MACD 12/26/9     — histograma e cruzamentos
+  #   RSI 14           — zona de sobrecompra/sobrevenda
+  #
+  # VOLUME (1 indicador):
+  #   Volume Delta     — pressão compradora ou vendedora estimada
+  #   Relative Volume  — volume atual vs. média de 20 candles
+  #
+  # COMPLEMENTARES:
+  #   Bollinger Bands 20/2  — volatilidade e rompimentos
+  #   ATR 14                — stop/TP dinâmico e filtro de volatilidade
+  #   VWAP cumulativo       — referência de preço justo intraday
+
+  ema_periods: [9, 21, 50, 200]
+  rsi_period: 14
+  macd: [12, 26, 9]
+  bollinger: { period: 20, std: 2.0 }
+  atr_period: 14
+  adx_period: 14
+  volume_lookback: 20
+
+
+# ── GESTÃO ATIVA DE SAÍDA ──────────────────────────────────────────────────────
+exit_management:
+  # Trailing Stop: ativado após atingir TP1 (ROI >= 8%)
+  # Fecha a posição se o ROI cair mais de max(3%, 35% do pico)
+  trailing_stop_enabled: true
+
+  # Break Even: mover SL para entrada após atingir TP1
+  break_even_enabled: true
+
+  # IA de saída antecipada: analisa indicadores para detectar reversão
+  ai_exit_enabled: true
+  ai_exit_min_profit_roi: 4.0  # ROI mínimo (%) para ativar saída por IA
+
+
+# ── PROTEÇÃO CONTRA LIQUIDAÇÃO ─────────────────────────────────────────────────
+liquidation_protection:
+  # O bot recusa trades onde o SL ficaria mais próximo da liquidação
+  # do que 80% / alavancagem do preço de entrada
+  # Exemplo: leverage=10 → SL deve ficar a pelo menos 8% da entrada
+  #
+  # Fórmula de verificação:
+  #   LONG : stop_loss > entry_price × (1 - 0.80/leverage)
+  #   SHORT: stop_loss < entry_price × (1 + 0.80/leverage)
+  safety_margin_ratio: 0.80
+
+  # Volatilidade ATR relativa máxima para abertura de posição
+  max_atr_relative_pct: 6.0
+
+
+# ── SCANNER DE MERCADO ─────────────────────────────────────────────────────────
+scanner:
+  # Intervalo de atualização da lista de moedas quentes (segundos)
+  interval_seconds: 20
+
+  # Volume mínimo de 24h para considerar o par (USDT)
+  min_quote_volume: 20_000_000
+
+  # Spread máximo permitido (%)
+  max_spread_pct: 0.12
+
+  # Número máximo de moedas escaneadas por ciclo
+  top_coins_limit: 30
+
+  # Moedas analisadas por ciclo de estratégia (as top N do scanner)
+  strategy_coins_per_cycle: 8

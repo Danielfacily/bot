@@ -170,41 +170,31 @@ class OrderManager:
 
     def _paper_open(self, db: Session, symbol: str, side: str, entry_price: float, leverage: int, risk: RiskDecision, signal_id: int | None) -> Trade:
         trade = self._record_trade(db, symbol, side, entry_price, leverage, risk, signal_id, "paper")
-        db.add(
-            Order(
-                trade_id=trade.id,
-                symbol=symbol,
-                side="BUY" if side == "LONG" else "SELL",
-                order_type="PAPER_MARKET",
-                status="filled",
-                price=entry_price,
-                quantity=risk.quantity,
-            )
-        )
-        db.add(
-            Order(
-                trade_id=trade.id,
-                symbol=symbol,
-                side="SELL" if side == "LONG" else "BUY",
-                order_type="PAPER_STOP_MARKET",
-                status="armed",
-                price=risk.stop_loss,
-                quantity=risk.quantity,
-                reduce_only=True,
-            )
-        )
-        db.add(
-            Order(
-                trade_id=trade.id,
-                symbol=symbol,
-                side="SELL" if side == "LONG" else "BUY",
-                order_type="PAPER_TAKE_PROFIT",
-                status="armed",
-                price=risk.take_profit,
-                quantity=risk.quantity,
-                reduce_only=True,
-            )
-        )
+        close_side = "SELL" if side == "LONG" else "BUY"
+        entry_side = "BUY" if side == "LONG" else "SELL"
+        db.add(Order(
+            trade_id=trade.id, symbol=symbol, side=entry_side,
+            order_type="PAPER_MARKET", status="filled",
+            price=entry_price, quantity=risk.quantity,
+        ))
+        db.add(Order(
+            trade_id=trade.id, symbol=symbol, side=close_side,
+            order_type="PAPER_STOP_MARKET", status="armed",
+            price=risk.stop_loss, quantity=risk.quantity, reduce_only=True,
+        ))
+        # TP1: fechar 50% da posição e mover SL para breakeven
+        if risk.take_profit_1:
+            db.add(Order(
+                trade_id=trade.id, symbol=symbol, side=close_side,
+                order_type="PAPER_TAKE_PROFIT_1", status="armed",
+                price=risk.take_profit_1, quantity=round(risk.quantity * 0.5, 6), reduce_only=True,
+            ))
+        # TP2: fechar o restante (trailing stop ativo)
+        db.add(Order(
+            trade_id=trade.id, symbol=symbol, side=close_side,
+            order_type="PAPER_TAKE_PROFIT", status="armed",
+            price=risk.take_profit, quantity=risk.quantity, reduce_only=True,
+        ))
         db.commit()
         db.refresh(trade)
         return trade
@@ -228,7 +218,8 @@ class OrderManager:
             quantity=risk.quantity,
             leverage=leverage,
             stop_loss=risk.stop_loss,
-            take_profit=risk.take_profit,
+            take_profit=risk.take_profit,           # TP2
+            take_profit_1=risk.take_profit_1 or None,  # TP1 (breakeven trigger)
             mode=mode,
             signal_id=signal_id,
         )

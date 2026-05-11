@@ -21,7 +21,8 @@ class Trade(Base, TimestampMixin):
     quantity: Mapped[float] = mapped_column(Float)
     leverage: Mapped[int] = mapped_column(Integer)
     stop_loss: Mapped[float] = mapped_column(Float)
-    take_profit: Mapped[float] = mapped_column(Float)
+    take_profit: Mapped[float] = mapped_column(Float)           # TP2: fechar o restante
+    take_profit_1: Mapped[float | None] = mapped_column(Float, nullable=True)  # TP1: fechar 50% e breakeven
     pnl: Mapped[float] = mapped_column(Float, default=0)
     pnl_pct: Mapped[float] = mapped_column(Float, default=0)
     mode: Mapped[str] = mapped_column(String(20), default="paper")
