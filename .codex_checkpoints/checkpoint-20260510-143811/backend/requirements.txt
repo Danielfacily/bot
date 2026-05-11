@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+redis==5.2.1
+httpx==0.28.1
+python-binance==1.0.25
+pandas==2.2.3
+numpy==2.2.1
+scikit-learn==1.6.0
+joblib==1.4.2
+websockets==14.1
+python-dotenv==1.0.1
