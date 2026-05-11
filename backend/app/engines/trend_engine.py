@@ -38,7 +38,11 @@ class TrendEngine:
         else:
             direction = "neutral"
 
-        primary_df = candles_by_tf.get("15m") or candles_by_tf.get("1h") or candles_by_tf.get("5m")
+        primary_df = candles_by_tf.get("15m")
+        if primary_df is None or len(primary_df) == 0:
+            primary_df = candles_by_tf.get("1h")
+        if primary_df is None or len(primary_df) == 0:
+            primary_df = candles_by_tf.get("5m")
         row_primary = primary_df.iloc[-1] if primary_df is not None and len(primary_df) > 0 else None
 
         ema_aligned = False

@@ -83,7 +83,11 @@ class EntryEngine:
             except Exception:
                 candles[tf] = None
 
-        primary = candles.get(primary_tf) or candles.get("15m") or candles.get("5m")
+        primary = candles.get(primary_tf)
+        if primary is None or len(primary) == 0:
+            primary = candles.get("15m")
+        if primary is None or len(primary) == 0:
+            primary = candles.get("5m")
         if primary is None or len(primary) < 50:
             signal = Signal(
                 symbol=symbol, timeframe=primary_tf, direction="LONG",
