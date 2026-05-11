@@ -108,7 +108,11 @@ function App() {
   const [selectedSymbol, setSelectedSymbol] = useState("BTCUSDT");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [portfolio, setPortfolio] = useState(null);
+  const [riskEvents, setRiskEvents] = useState([]);
+  const [wsLogs, setWsLogs] = useState([]);
   const riskDirtyRef = useRef(false);
+  const wsRef = useRef(null);
 
   const markDirty = (value) => {
     riskDirtyRef.current = value;
@@ -118,7 +122,7 @@ function App() {
   const loadAll = async ({ silent = false } = {}) => {
     try {
       if (!silent) setError("");
-      const [statusData, hotData, signalData, tradeData, logData, riskData, accountData, performanceData] = await Promise.all([
+      const [statusData, hotData, signalData, tradeData, logData, riskData, accountData, performanceData, portfolioData, riskEventsData] = await Promise.all([
         request("/status"),
         request("/scanner/hot?limit=20"),
         request("/signals?limit=25"),
@@ -126,7 +130,9 @@ function App() {
         request("/logs?limit=80"),
         request("/config/risk"),
         request("/account/balance").catch((err) => ({ connected: false, message: err.message })),
-        request("/performance/summary?mode=current").catch(() => null)
+        request("/performance/summary?mode=current").catch(() => null),
+        request("/portfolio").catch(() => null),
+        request("/risk/events?limit=5").catch(() => [])
       ]);
       setStatus(statusData);
       setHotCoins(hotData);
@@ -135,6 +141,8 @@ function App() {
       setLogs(logData);
       setRisk(riskData);
       setPerformance(performanceData);
+      setPortfolio(portfolioData);
+      setRiskEvents(riskEventsData);
       if (!riskDirtyRef.current) setRiskDraft(riskData);
       setAccount(accountData);
       if (hotData[0]?.symbol) setSelectedSymbol((current) => current || hotData[0].symbol);
@@ -147,6 +155,35 @@ function App() {
     loadAll();
     const timer = setInterval(() => loadAll({ silent: true }), 30000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const baseUrl = API || window.location.origin;
+      const wsUrl = baseUrl.replace(/^http/, "ws") + "/api/ws";
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "log") {
+            setWsLogs((prev) => [{ ...msg.data, ts: msg.ts }, ...prev].slice(0, 100));
+          }
+          if (msg.type === "trade" || msg.type === "signal") {
+            loadAll({ silent: true });
+          }
+        } catch (err) {
+          /* ignore */
+        }
+      };
+      ws.onerror = () => {};
+      ws.onclose = () => {};
+      return () => {
+        try { ws.close(); } catch (err) { /* ignore */ }
+      };
+    } catch (err) {
+      /* ignore connection setup */
+    }
   }, []);
 
   const openTrades = useMemo(() => trades.filter((trade) => trade.status === "open"), [trades]);
@@ -413,8 +450,8 @@ function RiskPanel({ draft, saved, dirty, loading, onChange, onPreset, onDiscard
           <FieldNumber label="Risco por trade" suffix="%" min="0.05" max="5" step="0.05" value={draft.max_risk_per_trade_pct} onChange={(value) => onChange("max_risk_per_trade_pct", value)} />
           <FieldNumber label="Margem entrada" suffix="USDT" min="1" max="500" step="1" value={draft.fixed_margin_usdt} onChange={(value) => onChange("fixed_margin_usdt", value)} />
           <FieldNumber label="Stop mínimo" suffix="%" min="0.1" max="10" step="0.1" value={draft.min_stop_loss_pct} onChange={(value) => onChange("min_stop_loss_pct", value)} />
-          <FieldNumber label="Alav. fixa" suffix="x" min="1" max="20" step="1" value={draft.leverage} onChange={(value) => onChange("leverage", value)} />
-          <FieldNumber label="Teto auto" suffix="x" min="1" max="20" step="1" value={draft.max_auto_leverage} onChange={(value) => onChange("max_auto_leverage", value)} />
+          <FieldNumber label="Alav. fixa" suffix="x" min="1" max="125" step="1" value={draft.leverage} onChange={(value) => onChange("leverage", value)} />
+          <FieldNumber label="Teto auto" suffix="x" min="1" max="125" step="1" value={draft.max_auto_leverage} onChange={(value) => onChange("max_auto_leverage", value)} />
           <FieldNumber label="Máx. posições" min="1" max="30" step="1" value={draft.max_open_positions} onChange={(value) => onChange("max_open_positions", value)} />
           <label className="select-field">
             <span>Tolerância</span>

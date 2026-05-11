@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -21,8 +21,7 @@ class Trade(Base, TimestampMixin):
     quantity: Mapped[float] = mapped_column(Float)
     leverage: Mapped[int] = mapped_column(Integer)
     stop_loss: Mapped[float] = mapped_column(Float)
-    take_profit: Mapped[float] = mapped_column(Float)           # TP2: fechar o restante
-    take_profit_1: Mapped[float | None] = mapped_column(Float, nullable=True)  # TP1: fechar 50% e breakeven
+    take_profit: Mapped[float] = mapped_column(Float)
     pnl: Mapped[float] = mapped_column(Float, default=0)
     pnl_pct: Mapped[float] = mapped_column(Float, default=0)
     mode: Mapped[str] = mapped_column(String(20), default="paper")
@@ -78,6 +77,7 @@ class Signal(Base, TimestampMixin):
     features: Mapped[dict] = mapped_column(JSON, default=dict)
     accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    setup: Mapped[str | None] = mapped_column(String(50), nullable=True, default="none")
 
 
 class Candle(Base, TimestampMixin):
@@ -132,6 +132,41 @@ class Backtest(Base, TimestampMixin):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     parameters: Mapped[dict] = mapped_column(JSON, default=dict)
     results: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class RiskEvent(Base, TimestampMixin):
+    """Eventos de risco: limites atingidos, bloqueios, alertas."""
+    __tablename__ = "risk_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(50), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ModelFeatures(Base, TimestampMixin):
+    """Features de cada trade para treinamento do modelo AI."""
+    __tablename__ = "model_features"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("trades.id"), nullable=True, index=True)
+    signal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("signals.id"), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(30), index=True)
+    setup: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    features: Mapped[dict] = mapped_column(JSON, default=dict)
+    outcome: Mapped[float | None] = mapped_column(Float, nullable=True)
+    success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class ModelPrediction(Base, TimestampMixin):
+    """Predições do modelo AI por sinal."""
+    __tablename__ = "model_predictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signal_id: Mapped[int] = mapped_column(Integer, ForeignKey("signals.id"), index=True)
+    model_version: Mapped[str] = mapped_column(String(50), default="v1")
+    probability: Mapped[float] = mapped_column(Float)
+    features_used: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class DailyPerformance(Base, TimestampMixin):

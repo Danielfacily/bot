@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from datetime import date, datetime
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -6,17 +6,59 @@ from app.backtester import Backtester
 from app.binance_client import BinanceFuturesClient
 from app.config import get_settings
 from app.database import get_db
-from app.market_scanner import MarketScanner
-from app.models.trading import Backtest, LogEntry, Order, Signal, Trade
-from app.order_manager import OrderManager
-from app.risk_manager import RiskManager
+from app.engines.market_scanner import MarketScanner
+from app.engines.execution_engine import ExecutionEngine as OrderManager
+from app.engines.risk_engine import RiskEngine as RiskManager
+from app.engines.portfolio_engine import PortfolioEngine
+from app.models.trading import Backtest, LogEntry, Order, RiskEvent, Signal, Trade
 from app.schemas.trading import AccountBalance, BacktestRequest, BotControl, BotStatus, ExchangePosition, RiskConfig
 from app.services.config_store import get_risk_config as load_risk_config, save_risk_config
 from app.services.logger import log_event
 from app.services.state import runtime_state
 from app.services.trade_sync import sync_exchange_trade_pnl
+from app.services.websocket_manager import ws_manager
 
 router = APIRouter()
+
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
+@router.get("/portfolio")
+def get_portfolio(db: Session = Depends(get_db)):
+    settings = get_settings()
+    summary = PortfolioEngine().summary(db, runtime_state.balance, settings.trading_mode)
+    return {
+        "open_positions": summary.open_positions,
+        "total_exposure_usdt": summary.total_exposure_usdt,
+        "unrealized_pnl": summary.unrealized_pnl,
+        "realized_pnl_today": summary.realized_pnl_today,
+        "margin_used": summary.margin_used,
+        "largest_position": summary.largest_position,
+        "risk_pct_of_balance": summary.risk_pct_of_balance,
+    }
+
+
+@router.get("/risk/events")
+def get_risk_events(limit: int = 20, db: Session = Depends(get_db)):
+    events = db.query(RiskEvent).order_by(desc(RiskEvent.created_at)).limit(limit).all()
+    return [
+        {
+            "id": e.id,
+            "type": e.event_type,
+            "reason": e.reason,
+            "details": e.details,
+            "created_at": e.created_at,
+        }
+        for e in events
+    ]
 
 
 @router.get("/health")
@@ -165,9 +207,9 @@ def signals(limit: int = 30, db: Session = Depends(get_db)):
 
 @router.post("/signals/run")
 async def run_signal(symbol: str = "BTCUSDT", timeframe: str = "15m", db: Session = Depends(get_db)):
-    from app.strategy_engine import StrategyEngine
+    from app.engines.entry_engine import EntryEngine
 
-    signal = await StrategyEngine().analyze_symbol(db, symbol, timeframe)
+    signal = await EntryEngine().analyze(db, symbol, timeframe)
     return signal
 
 
